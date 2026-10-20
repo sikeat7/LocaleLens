@@ -125,7 +125,8 @@ test('offline report works under its CSP, filters scenarios, zooms images and es
     const guide = page.locator('.remediation').first();
     await guide.locator('summary').click();
     assert.equal(await guide.isVisible(), true);
-    assert.match(await guide.innerText(), /Verify the change/);
+    // innerText includes CSS text-transform, so presentation casing can vary.
+    assert.match(await guide.innerText(), /Verify the change/i);
     await guide.locator('.copy-code').first().click();
     await page.waitForFunction(() =>
       [...document.querySelectorAll('.copy-status')].some((node) => node.textContent.length > 0),
