@@ -12,10 +12,21 @@ export const VIEWPORTS: Record<string, Viewport> = {
 
 export function httpUrl(value: string, name = 'url'): URL {
   let url: URL;
+  const input = value.trim();
+  if (!input || /^[/?#]/.test(input) || /[\\\u0000-\u001f\u007f]/.test(input))
+    throw new Error(`${name} must be a domain or a complete HTTP(S) URL.`);
+  const explicit = /^https?:\/\//i.test(input);
+  const authority = input.split(/[/?#]/)[0]!;
+  const hostWithPort = /^(?:[a-z\d.-]+|\[[a-f\d:]+\]):\d+$/i.test(authority);
+  if (!explicit && /^[a-z][a-z\d+.-]*:/i.test(input) && !hostWithPort)
+    throw new Error(`${name} must use http: or https:.`);
+  const local = /^(?:localhost\.?|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(input);
   try {
-    url = new URL(value);
+    url = new URL(explicit ? input : `${local ? 'http' : 'https'}://${input}`);
   } catch {
-    throw new Error(`${name} must be a complete HTTP(S) URL, e.g. http://localhost:3000.`);
+    throw new Error(
+      `${name} must be a valid domain or HTTP(S) URL, e.g. design.google or localhost:3000.`,
+    );
   }
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new Error(`${name} must use http: or https:.`);
@@ -23,7 +34,22 @@ export function httpUrl(value: string, name = 'url'): URL {
   if (url.username || url.password) {
     throw new Error(`${name} must not contain credentials. Use storageState for authentication.`);
   }
+  if (!explicit && !local && !url.hostname.includes('.'))
+    throw new Error(
+      `${name} must be a domain. Include http:// or https:// for a single-label internal host.`,
+    );
   return url;
+}
+
+export function allowedScanOrigin(target: string, landed: string): boolean {
+  const from = httpUrl(target);
+  const to = httpUrl(landed);
+  if (from.origin === to.origin) return true;
+  if (from.protocol === 'https:' && to.protocol !== 'https:') return false;
+  return (
+    from.hostname.replace(/^www\./, '') === to.hostname.replace(/^www\./, '') &&
+    from.port === to.port
+  );
 }
 
 export function routeUrl(base: string, route: string): string {

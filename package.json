@@ -13,7 +13,7 @@
     "url": "https://github.com/sponsors/sikeat7"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "bin": {
     "localelens": "dist/cli.js"
@@ -24,15 +24,18 @@
     "LICENSE",
     "CHANGELOG.md",
     "docs",
+    "web",
     "localelens.schema.json"
   ],
   "scripts": {
+    "start": "npm run build && node dist/cli.js serve --open",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "test:unit": "npm run build && node --test tests/config.test.mjs tests/cli-unit.test.mjs tests/report.test.mjs",
+    "test:unit": "npm run build && node --test tests/config.test.mjs tests/cli-unit.test.mjs tests/report.test.mjs tests/panel.test.mjs tests/access.test.mjs",
+    "test:panel": "npm run build && node --test tests/panel.test.mjs",
     "test:browser-ui": "npm run build && node tests/browser-harness.mjs",
     "check": "npm run typecheck && npm run format:check && npm test",
     "demo": "node demo/server.mjs",

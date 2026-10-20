@@ -10,7 +10,7 @@ npm run browser:install
 npm run check
 ```
 
-Requires Node.js 22 or later. If Chromium's default cache is unavailable, use the custom-cache instructions in [configuration](docs/configuration.md). Browser process launch must be allowed by your execution environment.
+Requires Node.js 22.13 or later. If Chromium's default cache is unavailable, use the custom-cache instructions in [configuration](docs/configuration.md). Browser process launch must be allowed by your execution environment.
 
 ## Project structure
 

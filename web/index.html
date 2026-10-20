@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LocaleLens · Your scan workspace</title>
+    <link rel="icon" href="/logo.png" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to workspace</a>
+    <aside class="sidebar">
+      <a class="brand" href="/"
+        ><img src="/logo.png" width="40" height="40" alt="" /><span
+          >LocaleLens<small>LOCAL WORKSPACE</small></span
+        ></a
+      >
+      <div class="nav-caption">YOUR WORKSPACE</div>
+      <nav aria-label="Workspace">
+        <a class="nav-link active" href="#new-scan"><span aria-hidden="true">＋</span> New scan</a
+        ><a class="nav-link" href="#history"
+          ><span aria-hidden="true">◷</span> Scan history
+          <span id="nav-count" class="nav-count">0</span></a
+        ><button class="nav-link" id="help-button">
+          <span aria-hidden="true">?</span> How it works
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-status"><i></i> Runs on your computer</div>
+        <p>Your scans stay here.<br />No account. No cloud uploads.</p>
+        <a href="https://github.com/sikeat7/LocaleLens" target="_blank" rel="noreferrer"
+          >Open source by @sikeat7 ↗</a
+        ><small id="version"></small>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <span>Workspace <span class="breadcrumb">/ Overview</span></span
+        ><span class="local-badge"><i></i> LOCAL ONLY</span>
+      </header>
+      <main id="main">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">A LITTLE STRESS. A BETTER LAYOUT.</div>
+            <h1>Make room for every language<span>.</span></h1>
+            <p>Find the layout bugs hiding between languages. Start with a URL.</p>
+          </div>
+          <span class="heading-mark" aria-hidden="true">[ ↔ ]</span>
+        </div>
+        <div id="connection" class="notice" role="status" hidden></div>
+        <div id="feedback" class="notice" role="status" hidden></div>
+        <section class="stats" aria-label="Workspace totals">
+          <div>
+            <span>Total scans</span><strong id="stat-total">0</strong
+            ><small>Your testing history</small>
+          </div>
+          <div>
+            <span>In progress</span><strong id="stat-active">0</strong
+            ><small>Running or in the queue</small>
+          </div>
+          <div>
+            <span>Finished scans</span><strong id="stat-completed">0</strong
+            ><small>Ready to review</small>
+          </div>
+          <div>
+            <span>Needs a retry</span><strong id="stat-failed">0</strong
+            ><small>Failed or interrupted runs</small>
+          </div>
+        </section>
+        <section class="launch-layout" id="new-scan">
+          <div class="card scan-card">
+            <div class="card-heading">
+              <div>
+                <span class="section-number">01 / START EXPLORING</span>
+                <h2>A new perspective on your site</h2>
+              </div>
+              <span class="small-pill">NEW SCAN</span>
+            </div>
+            <form id="scan-form">
+              <label for="url">Website URL</label>
+              <div class="url-input">
+                <span aria-hidden="true">↗</span
+                ><input
+                  id="url"
+                  name="url"
+                  type="text"
+                  inputmode="url"
+                  autocomplete="url"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  placeholder="design.google"
+                  required
+                  maxlength="4000"
+                /><button id="start" class="button primary" type="submit">
+                  Start scan <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+              <p class="field-hint">
+                Enter a domain, like design.google. No www or https:// required. Localhost works
+                too.
+              </p>
+              <fieldset class="presets">
+                <legend>Choose your test</legend>
+                <label class="preset"
+                  ><input type="radio" name="preset" value="quick" /><span
+                    ><strong>Quick look</strong><small>Desktop · text expansion</small></span
+                  ></label
+                ><label class="preset"
+                  ><input type="radio" name="preset" value="balanced" checked /><span
+                    ><strong>Everyday check <em>RECOMMENDED</em></strong
+                    ><small>Desktop + mobile · text + RTL</small></span
+                  ></label
+                ><label class="preset"
+                  ><input type="radio" name="preset" value="thorough" /><span
+                    ><strong>Full perspective</strong
+                    ><small>3 devices · all four modes</small></span
+                  ></label
+                >
+              </fieldset>
+              <details id="advanced">
+                <summary>Fine-tune your scan <span>Optional settings</span></summary>
+                <div class="advanced-grid">
+                  <div>
+                    <label for="label">Scan name</label
+                    ><input
+                      id="label"
+                      maxlength="120"
+                      placeholder="e.g. Storefront · before launch"
+                    />
+                  </div>
+                  <div>
+                    <label for="routes">Page paths <small>one per line</small></label
+                    ><textarea
+                      id="routes"
+                      rows="2"
+                      placeholder="Leave blank to scan the URL above"
+                    ></textarea>
+                  </div>
+                  <fieldset>
+                    <legend>Devices</legend>
+                    <div class="checks">
+                      <label
+                        ><input type="checkbox" name="viewport" value="desktop" checked />
+                        Desktop</label
+                      ><label
+                        ><input type="checkbox" name="viewport" value="mobile" checked />
+                        Mobile</label
+                      ><label
+                        ><input type="checkbox" name="viewport" value="tablet" /> Tablet</label
+                      >
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Layout modes</legend>
+                    <div class="checks">
+                      <label><input type="checkbox" checked disabled /> Original (always)</label
+                      ><label
+                        ><input type="checkbox" name="mode" value="expanded" checked /> Expanded
+                        text</label
+                      ><label
+                        ><input type="checkbox" name="mode" value="rtl" checked />
+                        Right-to-left</label
+                      ><label
+                        ><input type="checkbox" name="mode" value="expanded-rtl" checked /> Expanded
+                        + RTL</label
+                      >
+                    </div>
+                  </fieldset>
+                  <div>
+                    <label for="expansion">Text growth (%)</label
+                    ><input id="expansion" type="number" min="10" max="200" value="40" required />
+                  </div>
+                  <div>
+                    <label for="locale">Browser locale</label
+                    ><input id="locale" value="en-US" required maxlength="100" />
+                  </div>
+                  <div>
+                    <label for="timeout">Timeout per scenario (seconds)</label
+                    ><input id="timeout" type="number" min="1" max="120" value="60" required />
+                  </div>
+                  <div>
+                    <label for="settle">Page settling time (milliseconds)</label
+                    ><input id="settle" type="number" min="0" max="10000" value="1000" required />
+                  </div>
+                  <div>
+                    <label for="wait-for">Wait for element <small>CSS selector</small></label
+                    ><input id="wait-for" placeholder="e.g. main" />
+                  </div>
+                  <div>
+                    <label for="ignore">Ignore regions <small>one selector per line</small></label
+                    ><textarea id="ignore" rows="2" placeholder=".carousel"></textarea>
+                  </div>
+                  <div>
+                    <label for="mask"
+                      >Hide sensitive regions <small>one selector per line</small></label
+                    ><textarea id="mask" rows="2" placeholder=".customer-email"></textarea>
+                  </div>
+                  <div class="checks">
+                    <label
+                      ><input type="checkbox" id="screenshots" checked /> Include annotated
+                      screenshots</label
+                    >
+                  </div>
+                </div>
+              </details>
+              <div class="form-footer">
+                <span id="estimate">8 scenarios · 2 devices · 1 page</span
+                ><span>One scan runs at a time</span>
+              </div>
+            </form>
+          </div>
+          <aside class="insight-card">
+            <span class="section-number">LOOK BEYOND THE ORIGINAL</span>
+            <div class="layout-art" aria-hidden="true">
+              <div class="art-browser">
+                <div class="art-dots">● ● ●</div>
+                <div class="art-line short"></div>
+                <div class="art-line"></div>
+                <div class="art-overflow">Room for a little more text ↔</div>
+                <div class="art-blocks"><i></i><i></i></div>
+              </div>
+              <span class="art-label">SAME PAGE. NEW POSSIBILITIES.</span>
+            </div>
+            <h2>Small changes.<br />Hidden breakages.</h2>
+            <p>
+              A longer label or a new reading direction can expose a fragile layout. We’ll show you
+              where to look.
+            </p>
+            <div class="insight-list">
+              <span><b>↔</b> Expanded text</span><span><b>⇄</b> RTL stress testing</span
+              ><span><b>▧</b> Screenshots & offline reports</span>
+            </div>
+            <small>Layout simulations, not translations.</small>
+          </aside>
+        </section>
+        <section
+          class="card pipeline-card"
+          id="pipeline-card"
+          hidden
+          aria-labelledby="pipeline-heading"
+        >
+          <div class="card-heading">
+            <div>
+              <span class="section-number">FOLLOW THE WORK</span>
+              <h2 id="pipeline-heading">Scan pipeline</h2>
+            </div>
+            <label class="pipeline-picker"
+              ><span class="sr-only">Pipeline scan</span
+              ><select id="pipeline-scan" aria-label="Pipeline scan"></select
+            ></label>
+          </div>
+          <div class="pipeline-live-heading">
+            <strong id="pipeline-title"></strong><span id="pipeline-elapsed"></span>
+          </div>
+          <div id="pipeline-body" aria-live="polite"></div>
+          <div class="pipeline-actions" id="pipeline-actions"></div>
+        </section>
+        <section class="card history-card" id="history">
+          <div class="card-heading">
+            <div>
+              <span class="section-number">02 / KEEP THE BIG PICTURE</span>
+              <h2>Scan history <span id="history-count" class="count">0</span></h2>
+            </div>
+            <button class="button subtle" id="refresh" type="button">↻ Refresh</button>
+          </div>
+          <div class="history-tools">
+            <label class="search"
+              ><span aria-hidden="true">⌕</span
+              ><input
+                id="search"
+                type="search"
+                placeholder="Search by website or scan name…"
+                aria-label="Search scan history" /></label
+            ><label class="filter"
+              ><span class="sr-only">Filter by status</span
+              ><select id="status">
+                <option value="">All statuses</option>
+                <option value="running">Running</option>
+                <option value="queued">Queued</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="interrupted">Interrupted</option>
+              </select></label
+            >
+          </div>
+          <div id="history-list" aria-live="polite">
+            <div class="empty">
+              <span class="empty-icon" aria-hidden="true">↗</span>
+              <h3>Your first scan starts here</h3>
+              <p>
+                Paste a URL above. Every scan you run will appear here,<br />ready to revisit
+                whenever you need it.
+              </p>
+            </div>
+          </div>
+          <div id="pagination" class="pagination" hidden>
+            <button class="button subtle" id="previous">← Previous</button
+            ><span id="page-label"></span><button class="button subtle" id="next">Next →</button>
+          </div>
+        </section>
+        <footer class="page-footer">
+          <span>Made for layouts that welcome everyone.</span
+          ><a href="https://github.com/sponsors/sikeat7" target="_blank" rel="noreferrer"
+            >♡ Sponsor LocaleLens</a
+          >
+        </footer>
+      </main>
+    </div>
+    <dialog id="scan-detail">
+      <div class="dialog-heading">
+        <h2 id="detail-title">Scan details</h2>
+        <button class="icon-button" id="close-detail" aria-label="Close scan details">×</button>
+      </div>
+      <div id="detail-content"></div>
+    </dialog>
+    <dialog id="help">
+      <div class="dialog-heading">
+        <h2>One URL. A few new perspectives.</h2>
+        <button class="icon-button" id="close-help" aria-label="Close help">×</button>
+      </div>
+      <ol class="guide">
+        <li>
+          <strong>Choose a website.</strong>
+          <p>
+            Paste a complete URL. Use advanced settings to add specific page paths; LocaleLens does
+            not crawl the whole site.
+          </p>
+        </li>
+        <li>
+          <strong>Put its layout to the test.</strong>
+          <p>
+            We compare original pages with longer text and right-to-left layouts in a separate
+            Chromium browser.
+          </p>
+        </li>
+        <li>
+          <strong>Review what changed.</strong>
+          <p>
+            Open a report for screenshots, element selectors, and suggested fixes. Findings can need
+            human review.
+          </p>
+        </li>
+      </ol>
+      <p>
+        Your history is stored in a local SQLite database. Reports stay on this computer until you
+        share them. Visited websites make their usual network requests.
+      </p>
+      <p>
+        If a scan says Chromium is missing, close this panel and reopen it using the project
+        launcher, which installs the browser on first use.
+      </p>
+    </dialog>
+    <dialog id="confirm-delete">
+      <div class="dialog-heading"><h2>Delete this scan?</h2></div>
+      <p>This removes its history and saved reports from this computer. This cannot be undone.</p>
+      <div class="dialog-actions">
+        <button class="button subtle" id="keep-scan">Keep scan</button
+        ><button class="button danger" id="delete-scan">Delete scan</button>
+      </div>
+    </dialog>
+    <template id="scan-row"
+      ><article class="scan-row">
+        <div class="scan-site">
+          <span class="site-icon" aria-hidden="true">↗</span>
+          <div>
+            <button class="scan-title"></button><span class="scan-url"></span
+            ><small class="scan-meta"></small>
+          </div>
+        </div>
+        <div class="scan-state">
+          <span class="status-badge"></span><span class="result-summary"></span
+          ><progress max="100" value="0" hidden></progress><small class="current" hidden></small>
+        </div>
+        <div class="row-actions"></div></article
+    ></template>
+  </body>
+</html>

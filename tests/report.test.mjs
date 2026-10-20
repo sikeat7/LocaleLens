@@ -5,7 +5,22 @@ import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { renderReport } from '../dist/report.js';
-import { exitCode, writeReport } from '../dist/scanner.js';
+import { browserLaunchError, exitCode, writeReport } from '../dist/scanner.js';
+import { remediationFor } from '../dist/remediation.js';
+
+test('browser startup diagnostics preserve the cause after long launch arguments', () => {
+  const error = browserLaunchError(
+    new Error(
+      `Target page closed\n<launching> ${'--argument '.repeat(300)}\nFATAL: bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.1: Permission denied (1100)`,
+    ),
+  );
+  assert.match(error.message, /macOS denied browser startup/);
+  assert.match(error.message, /normal Terminal/);
+  assert.doesNotMatch(error.message, /Run "npx playwright install/);
+  const missing = browserLaunchError(new Error("Executable doesn't exist at /browser/chromium"));
+  assert.match(missing.message, /playwright install chromium/);
+  assert.match(missing.message, /Executable doesn't exist/);
+});
 
 function report() {
   return {
@@ -74,6 +89,67 @@ test('offline report allows only the exact embedded script with its CSP hash', (
   assert.ok(html.includes(`script-src 'sha256-${hash}'`));
   assert.ok(html.includes("default-src 'none'"));
   assert.ok(!/<(?:link|script)[^>]+(?:href|src)="https?:/.test(html));
+});
+
+test('findings include scoped examples, inspection guidance, and verification steps', () => {
+  const expected = {
+    'horizontal-overflow': ['min-inline-size: 0', 'flex-wrap: wrap'],
+    'clipped-text': ['block-size: auto', 'max-block-size: none'],
+    'page-error': ['DOMContentLoaded', 'HTMLButtonElement'],
+    'http-error': ['/existing-page', 'HTTP error'],
+    'scan-error': ['waitFor', '60000'],
+    'access-blocked': ['approved staging environment', 'localhost:3000'],
+  };
+  for (const [code, snippets] of Object.entries(expected)) {
+    const data = report();
+    data.scenarios[0].findings[0].code = code;
+    const html = renderReport(data);
+    assert.match(html, /How to fix this/);
+    assert.match(html, /What to inspect/);
+    assert.match(html, /Verify the change/);
+    assert.match(html, /Example patterns, not an automatic patch/);
+    assert.match(html, /class="copy-code"/);
+    for (const snippet of snippets)
+      assert.ok(html.includes(snippet), `${code}: missing ${snippet}`);
+    assert.ok(!html.includes('<img src=x onerror=alert(1)>'));
+  }
+});
+
+test('access barriers produce an explicit blocked report and never a passing CI result', () => {
+  const data = report();
+  data.config.failOn = 'none';
+  data.summary.failed = 1;
+  data.scenarios[0].status = 'failed';
+  data.scenarios[0].findings[0].code = 'access-blocked';
+  const html = renderReport(data);
+  assert.match(html, /Access blocked: affected website layouts were not inspected/);
+  assert.match(html, /class="badge error">Access blocked/);
+  assert.match(html, /not detected layout defects/);
+  assert.equal(exitCode(data), 2);
+  data.scenarios[0].skipReason = 'Baseline access blocked.';
+  assert.match(renderReport(data), /class="badge error">Skipped/);
+});
+
+test('RTL guidance is scenario-specific and authentication examples are restricted to HTTP 401/403', () => {
+  const finding = report().scenarios[0].findings[0];
+  const baseline = remediationFor(finding, 'baseline');
+  const rtl = remediationFor(finding, 'expanded-rtl');
+  assert.equal(baseline.examples.length, 1);
+  assert.equal(rtl.examples.length, 2);
+  assert.match(rtl.examples[1].code, /inset-inline-start/);
+  const auth = remediationFor(
+    { ...finding, code: 'http-error', message: 'HTTP 403 while loading the page.' },
+    'baseline',
+  );
+  assert.match(auth.examples[0].code, /storageState/);
+  assert.ok(auth.steps.some((step) => step.includes('web panel does not accept')));
+  const missing = remediationFor(
+    { ...finding, code: 'http-error', message: 'HTTP 404 while loading the page.' },
+    'baseline',
+  );
+  assert.doesNotMatch(missing.examples[0].code, /storageState/);
+  assert.doesNotThrow(() => JSON.parse(auth.examples[0].code));
+  assert.doesNotThrow(() => JSON.parse(missing.examples[0].code));
 });
 test('CI thresholds cannot convert failed scans or HTTP failures into success', () => {
   const data = report();

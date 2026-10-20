@@ -3,6 +3,22 @@ export type Severity = 'error' | 'warning';
 export type FailOn = Severity | 'none';
 export type Check = 'horizontal-overflow' | 'clipped-text' | 'page-error';
 
+export type PipelineStage =
+  | 'queued'
+  | 'preparing'
+  | 'launching'
+  | 'scanning'
+  | 'reporting'
+  | 'finished'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+export interface PipelineEvent {
+  stage: PipelineStage;
+  at: string;
+  detail: string;
+}
+
 export interface Viewport {
   name: string;
   width: number;
@@ -40,7 +56,7 @@ export interface Rect {
 
 export interface Finding {
   id: string;
-  code: Check | 'http-error' | 'scan-error';
+  code: Check | 'http-error' | 'scan-error' | 'access-blocked';
   severity: Severity;
   message: string;
   suggestion: string;
@@ -63,6 +79,7 @@ export interface Scenario {
   omittedFindings: number;
   notes: string[];
   screenshot?: string;
+  skipReason?: string;
 }
 
 export interface Report {

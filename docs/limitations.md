@@ -32,3 +32,11 @@ There is no telemetry or analysis upload. The inspected website can make normal 
 Reports include page snippets, URLs, uncaught exception messages, and screenshots. Masking covers chosen DOM regions and excludes those subtrees from finding snippets. It does not automatically find every secret, remove query parameters, sanitize exception messages, or redact other copies of the same text elsewhere. Review all reports before sharing or uploading CI artifacts.
 
 The HTML report embeds screenshots, uses no external assets, escapes page-supplied text, and includes a restrictive Content Security Policy. Report files are created with owner-only permissions where supported. Filesystem ACLs and platform behavior can differ, especially on Windows.
+
+## Access barriers
+
+A website served through Cloudflare can be scanned when it permits the browser request. A verification interstitial is different: LocaleLens recognizes the documented challenge header or a conservative combination of page signals, marks access as blocked, and does not inspect or transform that page. Customized protection pages that lack those signals may instead produce an HTTP or scan error. Normal CDN headers and embedded Turnstile widgets alone do not trigger interstitial detection.
+
+Any detected Cloudflare challenge stops the entire scan without a challenge screenshot or retry. Active parallel checks are stopped, and no remaining route, viewport, or mode is opened. Requests already in flight before detection may have reached the site. The report distinguishes stopped attempts from scenarios that were never opened and retains skipped scenario slots. Planned/completed counts include these skipped entries; their errors represent blocked checks rather than layout defects. These errors cannot become a clean CI result even with `failOn: none`.
+
+The scanner does not solve CAPTCHAs, supply a human browser identity, or circumvent a site's verification. Use an approved local/staging environment for a site you control, or coordinate permission with its administrator. Reusing application authentication state does not guarantee admission through a separate verification layer.

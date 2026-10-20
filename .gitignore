@@ -6,6 +6,7 @@ outputs/
 coverage/
 localelens-report/
 localelens-reports/
+.localelens/
 *.tgz
 *.tsbuildinfo
 .DS_Store

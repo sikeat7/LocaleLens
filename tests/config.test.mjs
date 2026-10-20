@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig, routeUrl, validateConfig } from '../dist/config.js';
+import { allowedScanOrigin, loadConfig, routeUrl, validateConfig } from '../dist/config.js';
 
 test('URL path, query and hash survive defaults; every stress scan has a baseline', () => {
   const config = validateConfig({
@@ -19,7 +19,10 @@ test('reject unsafe targets and routes instead of visiting unintended destinatio
   for (const url of [
     'file:///etc/passwd',
     'javascript:alert(1)',
-    'localhost:3000',
+    '//evil.test',
+    '/relative',
+    'not-a-domain',
+    'https:example.com',
     'https://name:password@example.com',
   ]) {
     assert.throws(() => validateConfig({ url }));
@@ -33,6 +36,38 @@ test('reject unsafe targets and routes instead of visiting unintended destinatio
   ]) {
     assert.throws(() => validateConfig({ url: 'https://example.com', routes: [route] }));
   }
+});
+
+test('bare domains normalize without losing paths or inventing www', () => {
+  for (const [input, expected] of [
+    ['design.google', 'https://design.google/'],
+    [' design.google/components?q=a#top ', 'https://design.google/components?q=a#top'],
+    ['www.example.com/path', 'https://www.example.com/path'],
+    ['example.com:8443', 'https://example.com:8443/'],
+    ['localhost:3000/app', 'http://localhost:3000/app'],
+    ['127.0.0.1:4173', 'http://127.0.0.1:4173/'],
+    ['[::1]:3000', 'http://[::1]:3000/'],
+    ['http://example.com/path', 'http://example.com/path'],
+  ]) {
+    const config = validateConfig({ url: input });
+    assert.equal(config.url, expected);
+    const url = new URL(expected);
+    assert.deepEqual(config.routes, [url.pathname + url.search + url.hash]);
+  }
+});
+
+test('canonical www/HTTPS redirects preserve the target while unrelated origins and downgrades stay rejected', () => {
+  assert.equal(allowedScanOrigin('https://example.com', 'https://www.example.com/app'), true);
+  assert.equal(allowedScanOrigin('https://www.example.com', 'https://example.com/app'), true);
+  assert.equal(allowedScanOrigin('http://example.com', 'https://example.com/app'), true);
+  for (const [from, to] of [
+    ['https://example.com', 'http://example.com'],
+    ['https://example.com', 'https://example.com.evil.test'],
+    ['https://example.com', 'https://login.example.com'],
+    ['https://example.com:8443', 'https://example.com:9443'],
+    ['https://www.example.com', 'https://www.www.example.com'],
+  ])
+    assert.equal(allowedScanOrigin(from, to), false);
 });
 
 test('strict validation catches misspellings, wrong types and unreasonable budgets', () => {

@@ -96,3 +96,9 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/ms-playwright" node dist/cli.js scan http:
 ```
 
 Set the same environment variable when running tests. Linux CI may need `npx playwright install --with-deps chromium`. A custom executable is supported, but the Playwright-matched browser is recommended.
+
+## Domain input and verification pages
+
+Website input can be a bare domain, such as `design.google`, with paths/query/hash if needed. Public domains default to HTTPS; localhost and loopback addresses default to HTTP. Explicit HTTP(S) URLs keep their protocol and hostname. Normal redirects to the exact `www` counterpart or the same host's HTTPS origin are accepted; unrelated origins, port changes, and HTTPS downgrades remain rejected. Embedded URL credentials are never accepted.
+
+A detected Cloudflare verification interstitial produces an `access-blocked` error without layout inspection. The entire scan stops: active parallel checks are stopped and all remaining routes, viewports, and modes are recorded as skipped (`skipReason`). No retries or challenge screenshots are made. Requests already in flight before detection may have reached the site. See [protected websites](web-panel.md#protected-websites).

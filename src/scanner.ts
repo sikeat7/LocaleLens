@@ -3,9 +3,15 @@ import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promise
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import type { Browser, BrowserContext } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import { annotatePage, inspectPage, transformPage } from './browser.js';
-import { routeUrl } from './config.js';
+import { allowedScanOrigin, routeUrl } from './config.js';
+import {
+  AccessStop,
+  isCloudflareChallenge,
+  readChallengeSignals,
+  skippedForAccess,
+} from './access.js';
 import { renderReport } from './report.js';
 import type { BrowserOptions, Config, Finding, Mode, Report, Scenario, Viewport } from './types.js';
 
@@ -21,16 +27,21 @@ function findingId(finding: Pick<Finding, 'code' | 'selector'>): string {
     .slice(0, 12);
 }
 
-function failure(message: string, code: 'scan-error' | 'http-error' = 'scan-error'): Finding {
+function failure(
+  message: string,
+  code: 'scan-error' | 'http-error' | 'access-blocked' = 'scan-error',
+): Finding {
   return {
     id: findingId({ code }),
     code,
     severity: 'error',
     message,
     suggestion:
-      code === 'http-error'
-        ? 'Verify the route and authentication state, then rerun the scan.'
-        : 'Verify the URL, readiness selector, browser installation, and timeout. Rerun the scan once the page is reachable.',
+      code === 'access-blocked'
+        ? 'Cloudflare verification prevented website inspection. For a site you control, use an approved staging environment or coordinate authorized automated testing with its administrator.'
+        : code === 'http-error'
+          ? 'Verify the route and authentication state, then rerun the scan.'
+          : 'Verify the URL, readiness selector, browser installation, and timeout. Rerun the scan once the page is reachable.',
     introduced: false,
   };
 }
@@ -38,6 +49,66 @@ function failure(message: string, code: 'scan-error' | 'http-error' = 'scan-erro
 function conciseError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 1200);
+}
+
+export function browserLaunchError(error: unknown): Error {
+  const message = (error instanceof Error ? error.message : String(error)).replace(
+    /\u001b\[[0-9;]*m/g,
+    '',
+  );
+  if (
+    /bootstrap_check_in.*Permission denied|MachPortRendezvousServer.*Permission denied/i.test(
+      message,
+    )
+  ) {
+    return new Error(
+      'Could not launch Chromium. macOS denied browser startup in the restricted execution environment. Close this panel and restart LocaleLens from your normal Terminal or the project launcher. The browser is installed; reinstalling it will not resolve this permission restriction.',
+    );
+  }
+  const lines = message
+    .split('\n')
+    .filter((line) => line.trim() && !/<launching>|<launched>/.test(line));
+  const details = lines.filter((line) =>
+    /FATAL|ERROR|Permission denied|error while loading shared libraries|executable doesn't exist/i.test(
+      line,
+    ),
+  );
+  return new Error(
+    `Could not launch Chromium. Run "npx playwright install chromium" (Linux CI: add --with-deps). ${[lines[0], ...details].filter(Boolean).join('\n').slice(0, 1500)}`,
+  );
+}
+
+async function captureScenario(
+  page: Page,
+  config: Config,
+  result: Scenario,
+  directory: string,
+  annotate: boolean,
+): Promise<void> {
+  if (!config.screenshots) return;
+  const size = await page.evaluate(() => ({
+    height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
+  }));
+  if (size.height > 16000)
+    result.notes.push('Screenshot cropped to the first 16,000 vertical pixels.');
+  if (annotate) await page.evaluate(annotatePage, result.findings);
+  const file = `${result.id}.png`;
+  await page.screenshot({
+    path: path.join(directory, file),
+    fullPage: true,
+    clip: {
+      x: 0,
+      y: 0,
+      width: result.viewport.width,
+      height: Math.min(Math.max(size.height, result.viewport.height), 16000),
+    },
+    animations: 'disabled',
+    timeout: config.timeout,
+    mask: config.mask.map((selector) => page.locator(selector)),
+    maskColor: '#253348',
+  });
+  await chmod(path.join(directory, file), 0o600);
+  result.screenshot = `screenshots/${path.basename(directory)}/${file}`;
 }
 
 async function inspectScenario(
@@ -49,6 +120,7 @@ async function inspectScenario(
   id: string,
   screenshotsDirectory: string,
   signal?: AbortSignal,
+  onAccessBlocked?: (finding: Finding) => void,
 ): Promise<Scenario> {
   const started = Date.now();
   const url = routeUrl(config.url, route);
@@ -104,19 +176,50 @@ async function inspectScenario(
     context.on('page', (popup) => {
       if (popup !== page) void popup.close().catch(() => undefined);
     });
+    signal?.throwIfAborted();
     const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
     result.url = page.url();
-    if (response && response.status() >= 400)
-      result.findings.push(
-        failure(`HTTP ${response.status()} while loading the page.`, 'http-error'),
-      );
-    if (new URL(page.url()).origin !== new URL(config.url).origin) {
+    if (!allowedScanOrigin(config.url, page.url())) {
       throw new Error(
         'The page redirected to a different origin. Scan that origin explicitly, or provide a valid authentication state.',
       );
     }
+    const stopForChallenge = async () => {
+      if (
+        !isCloudflareChallenge(
+          response?.headers()['cf-mitigated'],
+          await page.evaluate(readChallengeSignals),
+        )
+      )
+        return false;
+      result.status = 'failed';
+      result.findings.push(
+        failure(
+          'Access blocked by Cloudflare security verification. The website layout was not inspected.',
+          'access-blocked',
+        ),
+      );
+      result.notes.push(
+        'Cloudflare blocked access. This site was skipped immediately: no screenshot, layout inspection, text expansion, or RTL transformation was performed. No retry was made.',
+      );
+      onAccessBlocked?.(result.findings[0]!);
+      return true;
+    };
+    if (await stopForChallenge()) return result;
+    if (response && response.status() >= 400) {
+      result.status = 'failed';
+      result.findings.push(
+        failure(`HTTP ${response.status()} while loading the page.`, 'http-error'),
+      );
+      result.notes.push(
+        'The server returned an error page. Layout inspection and transformations were skipped.',
+      );
+      await captureScenario(page, config, result, screenshotsDirectory, false);
+      return result;
+    }
     if (config.waitFor) await page.locator(config.waitFor).first().waitFor({ state: 'visible' });
     await page.waitForTimeout(config.settle);
+    if (await stopForChallenge()) return result;
     const fontsReady = await page.evaluate(
       async (timeout) => {
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -167,33 +270,7 @@ async function inspectScenario(
         });
       }
     }
-    if (config.screenshots) {
-      const size = await page.evaluate(() => ({
-        height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
-      }));
-      if (size.height > 16000)
-        result.notes.push(
-          'Screenshot cropped to the first 16,000 vertical pixels. All eligible DOM elements were still inspected.',
-        );
-      await page.evaluate(annotatePage, result.findings);
-      const file = `${id}.png`;
-      await page.screenshot({
-        path: path.join(screenshotsDirectory, file),
-        fullPage: true,
-        clip: {
-          x: 0,
-          y: 0,
-          width: viewport.width,
-          height: Math.min(Math.max(size.height, viewport.height), 16000),
-        },
-        animations: 'disabled',
-        timeout: config.timeout,
-        mask: config.mask.map((selector) => page.locator(selector)),
-        maskColor: '#253348',
-      });
-      await chmod(path.join(screenshotsDirectory, file), 0o600);
-      result.screenshot = `screenshots/${path.basename(screenshotsDirectory)}/${file}`;
-    }
+    await captureScenario(page, config, result, screenshotsDirectory, true);
     result.status = result.findings.length ? 'findings' : 'passed';
   } catch (error) {
     result.status = 'failed';
@@ -217,10 +294,13 @@ async function inspectScenario(
 
 export interface ScanHooks {
   signal?: AbortSignal;
+  onStage?: (stage: 'preparing' | 'launching' | 'scanning') => void;
+  onScenarioStart?: (route: string, viewport: Viewport, mode: Mode) => void;
   onProgress?: (completed: number, total: number, scenario: Scenario) => void;
 }
 
 export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Report> {
+  hooks.onStage?.('preparing');
   const started = Date.now();
   const scanId = `${new Date(started).toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
   // Always use a fresh scan directory. Rerunning never deletes prior screenshots or unrelated files.
@@ -237,6 +317,7 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
   }
   hooks.signal?.throwIfAborted();
   let browser: Browser;
+  hooks.onStage?.('launching');
   try {
     browser = await chromium.launch({
       headless: true,
@@ -244,9 +325,7 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
       ...(config.executablePath ? { executablePath: config.executablePath } : {}),
     });
   } catch (error) {
-    throw new Error(
-      `Could not launch Chromium. Run "npx playwright install chromium" (Linux CI: add --with-deps). ${conciseError(error)}`,
-    );
+    throw browserLaunchError(error);
   }
   const tasks = config.routes.flatMap((route) =>
     config.viewports.map((viewport) => ({ route, viewport })),
@@ -255,7 +334,12 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
   const total = tasks.length * config.modes.length;
   let next = 0;
   let completed = 0;
+  const accessStop = new AccessStop();
+  const scanSignal = hooks.signal
+    ? AbortSignal.any([hooks.signal, accessStop.signal])
+    : accessStop.signal;
   try {
+    hooks.onStage?.('scanning');
     const worker = async () => {
       while (next < tasks.length) {
         const index = next++;
@@ -264,16 +348,36 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
         const baselineIds = new Set<string>();
         let baselineFailed = false;
         for (const [modeIndex, mode] of config.modes.entries()) {
-          const scenario = await inspectScenario(
-            browser,
-            config,
-            task.route,
-            task.viewport,
+          hooks.signal?.throwIfAborted();
+          const descriptor = {
+            id: `page-${index + 1}-${modeIndex + 1}-${mode}`,
+            route: task.route,
+            viewport: task.viewport,
             mode,
-            `page-${index + 1}-${modeIndex + 1}-${mode}`,
-            screenshotsDirectory,
-            hooks.signal,
-          );
+            url: routeUrl(config.url, task.route),
+          };
+          let scenario: Scenario;
+          if (accessStop.finding) {
+            scenario = skippedForAccess(descriptor, accessStop.finding, false);
+          } else {
+            hooks.onScenarioStart?.(task.route, task.viewport, mode);
+            scenario = await inspectScenario(
+              browser,
+              config,
+              task.route,
+              task.viewport,
+              mode,
+              descriptor.id,
+              screenshotsDirectory,
+              scanSignal,
+              (finding) => accessStop.stop(finding),
+            );
+            if (
+              accessStop.finding &&
+              !scenario.findings.some((finding) => finding.code === 'access-blocked')
+            )
+              scenario = skippedForAccess(descriptor, accessStop.finding, true);
+          }
           if (mode === 'baseline') {
             baselineFailed = scenario.status === 'failed';
             scenario.findings.forEach((finding) => baselineIds.add(finding.id));
@@ -286,6 +390,7 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
               finding.introduced =
                 !baselineIds.has(finding.id) &&
                 finding.code !== 'scan-error' &&
+                finding.code !== 'access-blocked' &&
                 finding.code !== 'http-error';
             });
           }
@@ -338,7 +443,9 @@ export async function scan(config: Config, hooks: ScanHooks = {}): Promise<Repor
 export function exitCode(report: Report): number {
   if (
     report.summary.failed ||
-    report.scenarios.some((item) => item.findings.some((finding) => finding.code === 'http-error'))
+    report.scenarios.some((item) =>
+      item.findings.some((finding) => ['http-error', 'access-blocked'].includes(finding.code)),
+    )
   )
     return 2;
   if (report.config.failOn === 'none') return 0;

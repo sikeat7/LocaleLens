@@ -1,8 +1,20 @@
 import http from 'node:http';
 
 export async function fixtureServer() {
+  const visits = new Map();
   const server = http.createServer((request, response) => {
     const route = new URL(request.url, 'http://localhost').pathname;
+    visits.set(route, (visits.get(route) ?? 0) + 1);
+    if (route === '/challenge-header' || route === '/challenge-dom') {
+      response.writeHead(route === '/challenge-header' ? 403 : 200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        ...(route === '/challenge-header' ? { 'cf-mitigated': 'challenge' } : {}),
+      });
+      response.end(
+        '<!doctype html><title>Just a moment...</title><h1>Performing security verification</h1><form id="challenge-form">Verifying you are human</form><div style="width:4000px">Verification page; must not be layout-tested</div>',
+      );
+      return;
+    }
     if (route === '/missing') {
       response.writeHead(404).end('Missing page');
       return;
@@ -49,6 +61,12 @@ export async function fixtureServer() {
     if (route === '/delayed')
       body =
         '<main><script>setTimeout(()=>{const e=document.createElement("h1");e.id="ready";e.textContent="Ready";document.body.append(e)},150)</script></main>';
+    if (route === '/cloudflare-normal') {
+      response.setHeader('Server', 'cloudflare');
+      response.setHeader('cf-ray', 'local-test-fixture');
+      body =
+        '<main><h1>Normal application</h1><form id="application-form"><div class="cf-turnstile">Verify you are human</div></form><script type="application/json" src="/cdn-cgi/challenge-platform/scripts/jsd/api.js"></script></main>';
+    }
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     response.end(
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${styles}</style></head><body>${body}</body></html>`,
@@ -56,6 +74,7 @@ export async function fixtureServer() {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
+    visits: (route) => visits.get(route) ?? 0,
     url: `http://127.0.0.1:${server.address().port}`,
     close: () => new Promise((resolve) => server.close(resolve)),
   };

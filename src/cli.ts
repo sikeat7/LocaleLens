@@ -9,16 +9,21 @@ const HELP = `
 LocaleLens — catch localization layout bugs before they ship.
 
 Usage
+  localelens serve [--open] [--port 4175] [--data-dir <directory>]
   localelens scan <url> [options]
   localelens scan --config localelens.config.json
   localelens init [--config localelens.config.json]
 
 Examples
+  localelens scan design.google
   localelens scan http://localhost:3000
   localelens scan https://example.com --routes /,/pricing --fail-on warning
   localelens scan http://localhost:3000 --modes expanded,expanded-rtl --json
 
 Options
+  --open                   Open the local web panel in your browser (serve)
+  --port <number>          Local web panel port (default: 4175)
+  --data-dir <directory>   SQLite history and report directory (serve)
   --config <file>          JSON configuration (auto-loads localelens.config.json)
   --routes <list>          Comma-separated same-origin paths (default: URL path)
   --modes <list>           baseline,expanded,rtl,expanded-rtl (baseline always included)
@@ -83,6 +88,9 @@ async function main(): Promise<number> {
       'executable-path': { type: 'string' },
       'no-screenshots': { type: 'boolean' },
       json: { type: 'boolean' },
+      open: { type: 'boolean' },
+      port: { type: 'string' },
+      'data-dir': { type: 'string' },
     },
   });
   if (values.version) {
@@ -96,6 +104,27 @@ async function main(): Promise<number> {
   const [command, url, ...extra] = positionals;
   if (extra.length)
     throw new Error('Too many positional arguments. Use --routes for multiple pages.');
+  if (command === 'serve') {
+    if (url) throw new Error('serve does not take a URL. Enter it in the web panel.');
+    const { startPanel, openPanel } = await import('./panel.js');
+    const panel = await startPanel({
+      ...(values.port !== undefined ? { port: Number(values.port) } : {}),
+      ...(values['data-dir'] ? { dataDir: values['data-dir'] } : {}),
+    });
+    process.stdout.write(
+      `LocaleLens workspace: ${panel.url}\nLocal history: ${panel.dataDir}\nKeep this terminal open. Press Ctrl+C to stop.\n`,
+    );
+    if (values.open) openPanel(panel.url);
+    const close = () => {
+      void panel.close().catch((error: unknown) => {
+        process.stderr.write(`Could not close the panel: ${String(error)}\n`);
+        process.exitCode = 2;
+      });
+    };
+    process.once('SIGINT', close);
+    process.once('SIGTERM', close);
+    return 0;
+  }
   if (command === 'init') {
     if (url) throw new Error('init does not take a URL. Edit the generated JSON configuration.');
     const file = path.resolve(values.config ?? 'localelens.config.json');

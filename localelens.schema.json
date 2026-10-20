@@ -7,7 +7,11 @@
   "required": ["url"],
   "properties": {
     "$schema": { "type": "string" },
-    "url": { "type": "string", "format": "uri", "pattern": "^https?://" },
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Bare domain or HTTP(S) URL. Public domains default to HTTPS; localhost and loopback default to HTTP."
+    },
     "routes": {
       "type": "array",
       "minItems": 1,

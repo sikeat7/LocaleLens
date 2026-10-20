@@ -122,6 +122,22 @@ test('offline report works under its CSP, filters scenarios, zooms images and es
         .join('')
         .includes('<img src=x onerror=alert(1)>'),
     );
+    const guide = page.locator('.remediation').first();
+    await guide.locator('summary').click();
+    assert.equal(await guide.isVisible(), true);
+    assert.match(await guide.innerText(), /Verify the change/);
+    await guide.locator('.copy-code').first().click();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('.copy-status')].some((node) => node.textContent.length > 0),
+    );
+    const copyStatus = await guide.locator('.copy-status').first().textContent();
+    assert.match(copyStatus, /Copied to clipboard|Code selected/);
+    if (copyStatus.includes('Code selected')) {
+      assert.equal(
+        await page.evaluate(() => window.getSelection().toString()),
+        await guide.locator('pre code').first().textContent(),
+      );
+    }
     await page.locator('.screenshot-button').first().click();
     assert.equal(await page.locator('#zoom').isVisible(), true);
     await page.keyboard.press('Escape');
@@ -226,5 +242,70 @@ test('cancellation closes browser work and does not produce a successful report'
     await assert.rejects(promise, /cancelled|abort/i);
   } finally {
     clearTimeout(timer);
+  }
+});
+
+test('verification interstitials are failed access barriers; stress modes are not requested again', async () => {
+  for (const route of ['/challenge-header', '/challenge-dom']) {
+    const before = server.visits(route);
+    const result = await scan(config([route], { waitFor: 'main', failOn: 'none' }));
+    assert.equal(result.summary.scenarios, 4);
+    assert.equal(result.summary.failed, 4);
+    assert.equal(result.summary.passed, 0);
+    assert.equal(result.summary.introduced, 0);
+    assert.equal(server.visits(route) - before, 1);
+    assert.equal(result.scenarios.filter((scenario) => scenario.skipReason).length, 3);
+    for (const scenario of result.scenarios) {
+      assert.equal(scenario.transformedNodes, 0);
+      assert.deepEqual(
+        scenario.findings.map((finding) => finding.code),
+        ['access-blocked'],
+      );
+    }
+    assert.equal(exitCode(result), 2);
+  }
+});
+
+test('a normal page on Cloudflare with an embedded widget still gets layout inspection', async () => {
+  const result = await scan(config(['/cloudflare-normal'], { modes: ['baseline', 'expanded'] }));
+  assert.equal(result.summary.failed, 0);
+  assert.ok(
+    result.scenarios.every(
+      (scenario) => !scenario.findings.some((finding) => finding.code === 'access-blocked'),
+    ),
+  );
+  assert.ok(result.scenarios.find((scenario) => scenario.mode === 'expanded').transformedNodes > 0);
+});
+
+test('Cloudflare blocks stop the whole scan, including other routes and devices, without screenshots or retries', async () => {
+  for (const concurrency of [1, 2]) {
+    const blockedBefore = server.visits('/challenge-header');
+    const healthyBefore = server.visits('/healthy');
+    const result = await scan(
+      config(['/challenge-header', '/healthy'], {
+        concurrency,
+        viewports: ['mobile', 'desktop'],
+        screenshots: true,
+        failOn: 'none',
+      }),
+    );
+    assert.equal(result.summary.scenarios, 16);
+    assert.equal(result.summary.failed, 16);
+    assert.equal(result.summary.passed, 0);
+    assert.equal(server.visits('/healthy'), healthyBefore, 'unstarted routes must never be opened');
+    const attempts = server.visits('/challenge-header') - blockedBefore;
+    assert.ok(
+      attempts >= 1 && attempts <= concurrency,
+      'only already-started workers may have made a request',
+    );
+    assert.ok(
+      result.scenarios.every((scenario) => !scenario.screenshot && scenario.transformedNodes === 0),
+    );
+    assert.ok(
+      result.scenarios.every((scenario) =>
+        scenario.findings.every((finding) => finding.code === 'access-blocked'),
+      ),
+    );
+    assert.equal(exitCode(result), 2);
   }
 });
