@@ -1,0 +1,9 @@
+node_modules
+dist
+.cache
+work
+outputs
+localelens-report
+localelens-reports
+package-lock.json
+*.svg

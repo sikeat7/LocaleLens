@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible LocaleLens failure or incorrect finding.
+body:
+  - type: markdown
+    attributes:
+      value: Please use a minimal example. Do not include private URLs, credentials, customer screenshots, or authentication files.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include the command, a redacted config, and a small HTML example if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Environment
+      description: OS, Node.js version, and LocaleLens version.
+    validations:
+      required: true

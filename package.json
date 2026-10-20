@@ -1,0 +1,59 @@
+{
+  "name": "localelens",
+  "version": "0.1.0",
+  "description": "Catch localization layout bugs with expanded text, RTL stress tests, and private offline reports.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "sikeat7",
+    "url": "https://github.com/sikeat7"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/sikeat7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "localelens": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs",
+    "localelens.schema.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:unit": "npm run build && node --test tests/config.test.mjs tests/cli-unit.test.mjs tests/report.test.mjs",
+    "test:browser-ui": "npm run build && node tests/browser-harness.mjs",
+    "check": "npm run typecheck && npm run format:check && npm test",
+    "demo": "node demo/server.mjs",
+    "browser:install": "playwright install chromium",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "i18n",
+    "localization",
+    "pseudolocalization",
+    "rtl",
+    "playwright",
+    "cli",
+    "visual-testing"
+  ],
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3"
+  }
+}

@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>LocaleLens — supplementary browser verification</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font:
+          14px/1.6 system-ui,
+          sans-serif;
+        color: #183b33;
+        background: #f6f7f2;
+        margin: 0;
+        padding: 32px;
+      }
+      main {
+        max-width: 960px;
+        margin: auto;
+      }
+      h1 {
+        letter-spacing: -1px;
+        line-height: 1.2;
+      }
+      button {
+        padding: 10px 18px;
+        border: 0;
+        background: #254e40;
+        color: white;
+        border-radius: 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+      #status {
+        font-weight: 700;
+      }
+      li {
+        margin: 5px 0;
+      }
+      .pass {
+        color: #306941;
+      }
+      .fail {
+        color: #b03232;
+      }
+      pre {
+        font-size: 11px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding: 16px;
+        background: white;
+        border: 1px solid #dfe5df;
+        border-radius: 8px;
+      }
+      #stage {
+        overflow: auto;
+        border: 1px solid #dfe5df;
+        background: white;
+        margin: 20px 0;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        margin: 0;
+      }
+      label {
+        display: block;
+        margin-top: 20px;
+      }
+      select {
+        padding: 8px;
+        max-width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>LOCALELENS / DEVELOPER VERIFICATION</p>
+      <h1>Real browser. Real layout checks.</h1>
+      <p>
+        Runs production DOM transformations and detection inside isolated fixture frames. This
+        supplements the full Chromium CLI suite; it does not exercise browser process launch,
+        screenshots, authentication, or scheduling.
+      </p>
+      <button id="run" type="button">Run browser checks</button>
+      <p id="status" aria-live="polite">Ready</p>
+      <ol id="checks"></ol>
+      <label for="scenario">Inspect a captured scenario</label
+      ><select id="scenario">
+        <option value="">Choose after running checks</option>
+      </select>
+      <div id="stage"></div>
+      <details>
+        <summary>Observed scenario JSON</summary>
+        <pre id="observations">[]</pre>
+      </details>
+    </main>
+    <script type="module">
+      const runButton = document.querySelector('#run');
+      const checks = document.querySelector('#checks');
+      const stage = document.querySelector('#stage');
+      const chooser = document.querySelector('#scenario');
+      const status = document.querySelector('#status');
+      const observations = [];
+      let failures = 0;
+      async function frameFor(route, width = 390) {
+        stage.replaceChildren();
+        const frame = document.createElement('iframe');
+        frame.style.width = `${width}px`;
+        frame.style.height = '844px';
+        const ready = new Promise((resolve, reject) => {
+          frame.onload = resolve;
+          frame.onerror = reject;
+        });
+        frame.src = `${route}?harness=1`;
+        stage.append(frame);
+        await ready;
+        await frame.contentDocument.fonts.ready;
+        return frame;
+      }
+      async function inspect(route, mode, extra = {}) {
+        const started = performance.now();
+        const width = extra.width ?? 390;
+        const frame = await frameFor(route, width);
+        const options = {
+          mode,
+          expansion: 40,
+          ignore: [],
+          mask: [],
+          checks: ['horizontal-overflow', 'clipped-text'],
+          maxFindings: 100,
+          ...extra,
+        };
+        const nodes = frame.contentWindow.localelensChecks.transformPage(options);
+        await new Promise((resolve) =>
+          frame.contentWindow.requestAnimationFrame(() =>
+            frame.contentWindow.requestAnimationFrame(resolve),
+          ),
+        );
+        const result = frame.contentWindow.localelensChecks.inspectPage(options);
+        const observation = {
+          route,
+          mode,
+          viewport: { name: width === 390 ? 'mobile' : 'desktop', width, height: 844 },
+          transformedNodes: nodes,
+          durationMs: Math.round(performance.now() - started),
+          options,
+          ...result,
+        };
+        observations.push(observation);
+        return observation;
+      }
+      function assert(condition, message) {
+        if (!condition) throw new Error(message);
+      }
+      async function check(name, callback) {
+        const item = document.createElement('li');
+        try {
+          await callback();
+          item.className = 'pass';
+          item.textContent = `PASS — ${name}`;
+        } catch (error) {
+          failures++;
+          item.className = 'fail';
+          item.textContent = `FAIL — ${name}: ${error.message}`;
+        }
+        checks.append(item);
+      }
+      runButton.addEventListener('click', async () => {
+        runButton.disabled = true;
+        failures = 0;
+        observations.length = 0;
+        checks.replaceChildren();
+        status.textContent = 'Running…';
+        for (const mode of ['baseline', 'expanded', 'rtl', 'expanded-rtl']) {
+          await check(`Healthy layout stays clean: ${mode}`, async () => {
+            const result = await inspect('/healthy', mode);
+            assert(result.findings.length === 0, JSON.stringify(result.findings));
+          });
+        }
+        await check('Short fixed button fits before expansion', async () => {
+          assert(
+            (await inspect('/expansion', 'baseline')).findings.length === 0,
+            'Baseline should fit',
+          );
+        });
+        await check('Expanded text exposes a clipped button', async () => {
+          const result = await inspect('/expansion', 'expanded');
+          assert(
+            result.findings.some((f) => f.code === 'clipped-text' && f.selector === '#tight'),
+            JSON.stringify(result.findings),
+          );
+          assert(result.transformedNodes > 0, 'No text transformed');
+        });
+        await check('Physical left offset fits in LTR', async () => {
+          assert((await inspect('/rtl', 'baseline')).findings.length === 0, 'Baseline should fit');
+        });
+        await check('RTL exposes physical left-offset overflow', async () => {
+          assert(
+            (await inspect('/rtl', 'rtl')).findings.some((f) => f.code === 'horizontal-overflow'),
+            'Expected overflow',
+          );
+        });
+        await check('Original page overflow is detected', async () => {
+          assert(
+            (await inspect('/wide', 'baseline')).findings.some((f) => f.selector === '#wide'),
+            'Expected #wide finding',
+          );
+        });
+        await check('Ignore selector excludes a known overflowing element', async () => {
+          assert(
+            (await inspect('/wide', 'expanded', { ignore: ['#wide'] })).findings.length === 0,
+            'Ignored element leaked into report',
+          );
+        });
+        await check('Ignore attribute excludes a known overflowing element', async () => {
+          assert(
+            (await inspect('/ignore', 'expanded')).findings.length === 0,
+            'Ignored region leaked into report',
+          );
+        });
+        await check('Ellipsis, scrollers and hidden elements stay clean', async () => {
+          assert(
+            (await inspect('/false-positives', 'expanded')).findings.length === 0,
+            'Intentional layout was reported',
+          );
+        });
+        await check('Sensitive descendants are removed from snippets', async () => {
+          const result = await inspect('/secret', 'baseline', { mask: ['#secret'] });
+          assert(!JSON.stringify(result).includes('PRIVATE-SECRET-98765'), 'Sensitive text leaked');
+          assert(
+            result.findings.some((f) => f.text.includes('Public text')),
+            'Public context missing',
+          );
+        });
+        await check('Finding caps report omissions explicitly', async () => {
+          const result = await inspect('/many', 'baseline', { maxFindings: 2 });
+          assert(
+            result.findings.length === 2 && result.omittedFindings > 0,
+            JSON.stringify(result),
+          );
+        });
+        await check('Invalid ignore selectors fail explicitly', async () => {
+          let failed = false;
+          try {
+            await inspect('/healthy', 'baseline', { ignore: ['['] });
+          } catch {
+            failed = true;
+          }
+          assert(failed, 'Invalid selector accepted');
+        });
+        await check('Page text remains inert content', async () => {
+          const result = await inspect('/xss', 'baseline');
+          assert(
+            result.findings.some((f) => f.text.includes('<img src=x onerror=alert(1)>')),
+            'Text did not survive safely',
+          );
+        });
+        for (const width of [390, 1440]) {
+          for (const mode of ['baseline', 'expanded', 'rtl', 'expanded-rtl']) {
+            await check(`Flexible demo stays clean: ${width}px ${mode}`, async () => {
+              const result = await inspect('/demo-healthy', mode, { width });
+              assert(result.findings.length === 0, JSON.stringify(result.findings));
+            });
+          }
+          if (width === 390)
+            await check(`Fragile demo exposes RTL viewport overflow: ${width}px`, async () => {
+              const result = await inspect('/demo', 'rtl', { width });
+              assert(
+                result.findings.some((f) => f.code === 'horizontal-overflow'),
+                'Expected RTL overflow',
+              );
+            });
+          else await inspect('/demo', 'rtl', { width });
+          await check(`Fragile demo exposes expanded-text issues: ${width}px`, async () => {
+            const result = await inspect('/demo', 'expanded', { width });
+            assert(
+              result.findings.some((f) => f.code === 'clipped-text'),
+              'Expected clipped text',
+            );
+          });
+          await inspect('/demo', 'baseline', { width });
+        }
+        document.querySelector('#observations').textContent = JSON.stringify(observations, null, 2);
+        chooser.replaceChildren(new Option('Choose a scenario', ''));
+        observations.forEach((item, index) =>
+          chooser.append(
+            new Option(
+              `${item.route} · ${item.mode} · ${item.findings.length} findings`,
+              String(index),
+            ),
+          ),
+        );
+        status.textContent = `${checks.children.length - failures}/${checks.children.length} browser checks passed${failures ? `; ${failures} failed` : ''}.`;
+        runButton.disabled = false;
+      });
+      chooser.addEventListener('change', async () => {
+        const item = observations[Number(chooser.value)];
+        if (!item) return;
+        const frame = await frameFor(item.route, item.viewport.width);
+        frame.contentWindow.localelensChecks.transformPage(item.options);
+        frame.contentWindow.localelensChecks.annotatePage(item.findings);
+      });
+    </script>
+  </body>
+</html>

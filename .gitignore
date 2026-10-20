@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.cache/
+work/
+outputs/
+coverage/
+localelens-report/
+localelens-reports/
+*.tgz
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+*storage-state*.json
+auth.json
+playwright/.auth/
