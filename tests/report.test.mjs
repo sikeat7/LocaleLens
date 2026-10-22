@@ -84,7 +84,7 @@ test('report output escapes every page-supplied text boundary', () => {
 });
 test('offline report allows only the exact embedded script with its CSP hash', () => {
   const html = renderReport(report());
-  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)[1];
   const hash = createHash('sha256').update(script).digest('base64');
   assert.ok(html.includes(`script-src 'sha256-${hash}'`));
   assert.ok(html.includes("default-src 'none'"));
